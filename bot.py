@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from PIL import Image
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
 import requests
 from urllib.request import urlopen
@@ -18,7 +19,7 @@ from urllib.request import urlopen
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
-GUILD = os.getenv('DISCORD_GUILD')
+GUILD = os.getenv('GUILD_ID')
 
 intent=discord.Intents.default()
 intent.message_content = True
@@ -27,21 +28,17 @@ bot = discord.Client(intents=intent)
 
 tree = app_commands.CommandTree(bot)
 
+next_quote = ""
 
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
         return
-
-
-
     if message.content == 'bun bun':
         await bun_pic(message)
 
 
-
-
-@tree.command(name = "bunpic", description= "random pic of bun bun", guild = discord.Object(id=833726209245315102))
+@tree.command(name = "bunpic", description= "random pic of bun bun", guild = discord.Object(id=GUILD))
 async def bunpic(interaction:discord.Interaction):
     await interaction.response.defer()
     imgs = os.listdir("bun bun pics")
@@ -54,13 +51,13 @@ async def bunpic(interaction:discord.Interaction):
 async def bun_pic(ctx):
     imgs = os.listdir("bun bun pics")
     randpic = random.choice(imgs)
+    print(randpic)
     file = discord.File("bun bun pics/" + randpic, filename=randpic)
     embed = discord.Embed()
     embed.set_image(url="attachment://" + randpic)
     await ctx.channel.send(file=file, embed=embed)
 
-
-@tree.command(name = "addpic", description= "add pic of bun bun [NOT DONE]", guild = discord.Object(id=833726209245315102))
+@tree.command(name = "addpic", description= "add pic of bun bun", guild = discord.Object(id=GUILD))
 async def addpic(interaction: discord.Interaction, file: discord.Attachment):
     await interaction.response.defer()
 
@@ -75,36 +72,19 @@ async def addpic(interaction: discord.Interaction, file: discord.Attachment):
     else:
         await interaction.followup.send("please give an image")
 
-@tree.command(name= "quote", description = "ask bun bun for a motivational quote!", guild = discord.Object(id=833726209245315102))
+@tree.command(name= "quote", description = "ask bun bun for a motivational quote from Reddit!", guild = discord.Object(id=GUILD))
 async def quote(interaction: discord.Interaction):
     await interaction.response.defer()
-    # url = "https://randomwordgenerator.com/motivational-quote.php"
-    """
-    header = {'User-Agent': 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.7) Gecko/2009021910 Firefox/3.0.7', }
-    req = urllib.request.Request(url=url, headers=header)
-    page = urllib.request.urlopen(req)
-    html_bytes = page.read()
-    html = html_bytes.decode("utf-8")
-    print(html)
-    
-    browser = webdriver.Chrome()
-    browser.get(url)
-    soup = BeautifulSoup(browser.page_source, 'html.parser')
-    quote = soup.find(id = 'result')
+    global next_quote
+    if next_quote == "":
+        await interaction.followup.send("please wait a few seconds before requesting another quote")
+    else:
+        await interaction.followup.send(next_quote)
+        next_quote = ""
+    await get_next_quote()
 
-    print(soup)
-    print(quote)
-    browser.close()
-    """
-    """
-       i = 0
-       async for submission in posts:
-           if (not submission.stickied) and (not submission.selftext):
-               if i == a:
-                   await interaction.followup.send(submission.title)
-                   break
-               i = i + 1
-     """
+
+async def get_next_quote():
     reddit = asyncpraw.Reddit(
         client_id='c9oCO-mAlCCGbhvFZ53Pfw',
         client_secret='AWe4VFzy9BaxnIPx2r-X8Px_kOOi3Q',
@@ -112,7 +92,7 @@ async def quote(interaction: discord.Interaction):
     )
 
     subreddit = await reddit.subreddit("quotes")
-    posts = subreddit.hot(limit = 1000)
+    posts = subreddit.hot(limit=1000)
     list = [gen async for gen in posts]
     a = random.randint(0, 999)
     submission = list[a]
@@ -120,24 +100,58 @@ async def quote(interaction: discord.Interaction):
         a = random.randint(0, 999)
         submission = list[a]
 
-    await interaction.followup.send(submission.title)
+    global next_quote
+    next_quote = submission.title
     await reddit.close()
+
+
+@tree.command(name="quote2", description = "ask bun bun for a motivational quote!", guild = discord.Object(id=GUILD))
+async def quote2(interaction: discord.Interaction):
+    await interaction.response.defer()
+
+    url = "https://randomwordgenerator.com/motivational-quote.php"
+
+    options = Options()
+    options.add_argument("--headless")  # run in background
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36")
+
+    browser = webdriver.Chrome(options=options)
+    browser.get(url)
+    soup = BeautifulSoup(browser.page_source, 'html.parser')
+    span = soup.find("span", class_="support-sentence")
+
+    if span:
+        quote_text = span.contents[0].strip().strip('"')
+
+        author_tag = span.find("i")
+        author = author_tag.get_text(strip=True) if author_tag else "Unknown"
+
+        await interaction.followup.send(quote_text + "\n\t-" + author)
+
+    else:
+        print("Quote not found!")
+    browser.quit()
 
 
 
 @bot.event
 async def on_ready():
     for guild in bot.guilds:
-        if guild.name == GUILD:
+        if guild.id == GUILD:
             break
 
-    await tree.sync(guild=discord.Object (id=833726209245315102))
+    await tree.sync(guild=discord.Object (id=GUILD))
 
 
     print(
         f'{bot.user} is connected to the following guild:\n'
         f'{guild.name}(id: {guild.id})'
     )
+    await get_next_quote()
 
 
 bot.run(TOKEN)
